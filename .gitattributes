@@ -1,3 +1,5 @@
-*.kml filter=lfs diff=lfs merge=lfs -text
+# Git LFS file patterns
 *.kmz filter=lfs diff=lfs merge=lfs -text
+*.kml filter=lfs diff=lfs merge=lfs -text
 *.gpx filter=lfs diff=lfs merge=lfs -text
+
