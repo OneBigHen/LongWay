@@ -1,0 +1,16 @@
+[
+  {
+    "id": "PA_twisty_pennsylvania.c_1000.kml",
+    "state": "PA",
+    "kind": "twisty",
+    "url": "/kml/pennsylvania.c_1000.kml",
+    "enabled": false
+  },
+  {
+    "id": "PA_curvy_pennsylvania.c_300.kml",
+    "state": "PA",
+    "kind": "curvy",
+    "url": "/kml/pennsylvania.c_300.kml",
+    "enabled": false
+  }
+]
