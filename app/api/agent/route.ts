@@ -1,6 +1,7 @@
 import { getYouAgentId, getYouApiKey } from '@/lib/config';
 import { backoff } from '@/lib/utils';
 import { AgentPOIArraySchema } from '@/lib/schema';
+import { logYouApiUsage } from '@/lib/youApiLogger';
 
 export async function POST(req: Request) {
   const { origin, destination, dateISO, samples, preference } = await req.json().catch(() => ({}));
@@ -27,7 +28,8 @@ export async function POST(req: Request) {
   ].filter(Boolean).join('\n');
 
   const run = async () => {
-    const resp = await fetch('https://api.you.com/v1/agents/runs', {
+    const apiUrl = 'https://api.you.com/v1/agents/runs';
+    const resp = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -35,9 +37,28 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({ agent: agentId, input: prompt, stream: false }),
     });
+    
+    // Log API usage
+    const errorText = !resp.ok ? await resp.clone().text().catch(() => 'Unknown error') : undefined;
+    await logYouApiUsage({
+      endpoint: '/v1/agents/runs (POI Discovery)',
+      agentId,
+      request: {
+        origin,
+        destination,
+        method: 'POST',
+        url: apiUrl,
+      },
+      response: {
+        status: resp.status,
+        success: resp.ok,
+        error: errorText,
+      },
+    });
+    
     if (!resp.ok) {
       if (resp.status === 502 || resp.status === 503) throw new Error(`Transient ${resp.status}`);
-      const text = await resp.text();
+      const text = errorText || await resp.text();
       return new Response(JSON.stringify({ error: text }), { status: resp.status });
     }
     const data = await resp.json();

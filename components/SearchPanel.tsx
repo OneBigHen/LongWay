@@ -97,7 +97,6 @@ export default function SearchPanel({
   const handlePlanRoute = () => {
     const o = origin.trim();
     const d = destination.trim();
-    console.log('[PlanRoute] final values', { o, d, dateISO, plannerType });
     if (o && d) {
       const pref = preference.trim();
       const routePrefs: RoutePreferences | undefined = plannerType === 'you-com' ? {

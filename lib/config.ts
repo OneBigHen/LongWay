@@ -15,15 +15,21 @@ export const getYouApiKey = (): string => {
 };
 
 export const getYouAgentId = (): string => {
-  const id = process.env.YOU_AGENT_ID;
+  // RouteGenie - Route Recommendations
+  const id = process.env.NEXT_PUBLIC_YOU_AGENT_ID || process.env.YOU_AGENT_ID;
   if (!id) {
-    throw new Error('Missing YOU_AGENT_ID');
+    throw new Error('Missing NEXT_PUBLIC_YOU_AGENT_ID or YOU_AGENT_ID');
   }
   return id;
 };
 
 export const getRouteAltAgentId = (): string => {
-  return 'b9907c16-a251-4e3c-b96f-e485f4149e0f';
+  // RouteAlt - Find fun roads
+  const id = process.env.NEXT_PUBLIC_YOU_ROUTE_ID || process.env.YOU_ROUTE_ID;
+  if (!id) {
+    throw new Error('Missing NEXT_PUBLIC_YOU_ROUTE_ID or YOU_ROUTE_ID');
+  }
+  return id;
 };
 
 

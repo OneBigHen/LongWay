@@ -16,7 +16,7 @@ export default function RecommendationPopup({
 
   return (
     <div className="fixed inset-0 z-[60] pointer-events-none flex items-center justify-center p-4">
-      <div className="pointer-events-auto bg-white rounded-xl shadow-xl max-w-md w-full p-6 border border-gray-200">
+      <div className="pointer-events-auto bg-white rounded-xl shadow-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-6 border border-gray-200">
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="flex items-center gap-2 mb-2">

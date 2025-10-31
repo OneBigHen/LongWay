@@ -344,36 +344,135 @@ export default function HomePage() {
         await ensureMaps();
         const g = google as any;
         
-        // Geocode each key road with context from origin/destination region
-        for (const road of alt.keyRoads.slice(0, 23)) { // Max 23 waypoints for Google
-          try {
-            // Try to geocode with region context (add PA or NJ if in the route)
-            const originRegion = alt.origin.includes('PA') || alt.origin.includes('Pennsylvania') ? 'PA' : 
-                                 alt.origin.includes('NJ') || alt.origin.includes('New Jersey') ? 'NJ' : '';
-            const searchQuery = originRegion ? `${road}, ${originRegion}` : road;
-            
+        // First, get origin and destination coordinates to establish route corridor
+        async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+          const coordsMatch = address.match(/^(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
+          if (coordsMatch) {
+            return { lat: parseFloat(coordsMatch[1]), lng: parseFloat(coordsMatch[2]) };
+          }
+          
+          return new Promise((resolve) => {
             const geocoder = new g.maps.Geocoder();
-            const result = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
-              geocoder.geocode({ address: searchQuery }, (results: any[], status: string) => {
-                if (status === 'OK' && results && results[0]) {
-                  const loc = results[0].geometry.location;
-                  resolve({ lat: loc.lat(), lng: loc.lng() });
-                } else {
-                  // Try without region
-                  geocoder.geocode({ address: road }, (results2: any[], status2: string) => {
-                    if (status2 === 'OK' && results2 && results2[0]) {
-                      const loc2 = results2[0].geometry.location;
-                      resolve({ lat: loc2.lat(), lng: loc2.lng() });
-                    } else {
-                      resolve(null);
-                    }
-                  });
+            geocoder.geocode({ address }, (results: any[], status: string) => {
+              if (status === 'OK' && results && results[0]) {
+                const loc = results[0].geometry.location;
+                resolve({ lat: loc.lat(), lng: loc.lng() });
+              } else {
+                resolve(null);
+              }
+            });
+          });
+        }
+        
+        const originCoords = await geocodeAddress(alt.origin);
+        const destCoords = await geocodeAddress(alt.destination);
+        
+        // Get a baseline route to understand the corridor between origin and destination
+        let routeCorridor: Array<{ lat: number; lng: number }> | null = null;
+        if (originCoords && destCoords) {
+          try {
+            const service = new g.maps.DirectionsService();
+            const baselineResult = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
+              service.route(
+                { origin: originCoords, destination: destCoords, travelMode: g.maps.TravelMode.DRIVING },
+                (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
+                  if (status === 'OK' && result) {
+                    resolve(result);
+                  } else {
+                    resolve(null);
+                  }
                 }
-              });
+              );
             });
             
-            if (result) {
-              geocodedWaypoints.push(result);
+            if (baselineResult && baselineResult.routes[0]) {
+              routeCorridor = baselineResult.routes[0].overview_path.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
+            }
+          } catch (err) {
+            console.warn('Failed to get baseline route for corridor:', err);
+          }
+        }
+        
+        // Helper to check if point is reasonably close to route corridor
+        function isNearRouteCorridor(point: { lat: number; lng: number }, corridor: Array<{ lat: number; lng: number }> | null, thresholdKm = 50): boolean {
+          if (!corridor || corridor.length === 0 || !originCoords || !destCoords) return true;
+          
+          // Check if point is between origin and destination (within reasonable bounds)
+          const minLat = Math.min(originCoords.lat, destCoords.lat) - 0.5;
+          const maxLat = Math.max(originCoords.lat, destCoords.lat) + 0.5;
+          const minLng = Math.min(originCoords.lng, destCoords.lng) - 0.5;
+          const maxLng = Math.max(originCoords.lng, destCoords.lng) + 0.5;
+          
+          if (point.lat < minLat || point.lat > maxLat || point.lng < minLng || point.lng > maxLng) {
+            return false;
+          }
+          
+          // Check distance to nearest point on corridor
+          let minDistance = Infinity;
+          for (const corridorPoint of corridor) {
+            const dx = point.lat - corridorPoint.lat;
+            const dy = point.lng - corridorPoint.lng;
+            const distanceKm = Math.sqrt(dx * dx + dy * dy) * 111; // Rough km conversion
+            minDistance = Math.min(minDistance, distanceKm);
+          }
+          
+          return minDistance < thresholdKm;
+        }
+        
+        // Geocode each key road and filter to points along the route corridor
+        for (const road of alt.keyRoads.slice(0, 23)) { // Max 23 waypoints for Google
+          try {
+            // Build search query with better context
+            const originRegion = alt.origin.includes('PA') || alt.origin.includes('Pennsylvania') ? 'PA' : 
+                                 alt.origin.includes('NJ') || alt.origin.includes('New Jersey') ? 'NJ' : '';
+            
+            // Try multiple search strategies
+            const searchQueries = [
+              originRegion ? `${road} ${originRegion}` : road,
+              originRegion ? `${road}, ${originRegion}` : road,
+              road,
+            ];
+            
+            const geocoder = new g.maps.Geocoder();
+            let bestResult: { lat: number; lng: number } | null = null;
+            
+            for (const query of searchQueries) {
+              const result = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+                const bounds = originCoords && destCoords ? new g.maps.LatLngBounds(
+                  new g.maps.LatLng(Math.min(originCoords.lat, destCoords.lat) - 0.5, Math.min(originCoords.lng, destCoords.lng) - 0.5),
+                  new g.maps.LatLng(Math.max(originCoords.lat, destCoords.lat) + 0.5, Math.max(originCoords.lng, destCoords.lng) + 0.5)
+                ) : undefined;
+                
+                geocoder.geocode({ address: query, bounds }, (results: any[], status: string) => {
+                  if (status === 'OK' && results && results.length > 0) {
+                    // Find the result closest to the route corridor
+                    for (const res of results) {
+                      const loc = res.geometry.location;
+                      const point = { lat: loc.lat(), lng: loc.lng() };
+                      if (isNearRouteCorridor(point, routeCorridor, 75)) {
+                        resolve(point);
+                        return;
+                      }
+                    }
+                    // If none match corridor, use first result anyway
+                    const loc = results[0].geometry.location;
+                    resolve({ lat: loc.lat(), lng: loc.lng() });
+                  } else {
+                    resolve(null);
+                  }
+                });
+              });
+              
+              if (result && isNearRouteCorridor(result, routeCorridor, 75)) {
+                bestResult = result;
+                break; // Found a good result, stop searching
+              } else if (result && !bestResult) {
+                bestResult = result; // Keep as fallback
+              }
+            }
+            
+            if (bestResult) {
+              geocodedWaypoints.push(bestResult);
             }
           } catch (err) {
             console.warn(`Failed to geocode road: ${road}`, err);
@@ -422,7 +521,6 @@ export default function HomePage() {
         waypointValue={midText}
         onWaypointChange={(val) => setMidText(val)}
         onPlan={({ origin, destination, dateISO, preference, plannerType, routePreferences }) => {
-          console.log('[HomePage] onPlan called', { origin, destination, dateISO, preference, plannerType, routePreferences });
           setCounter((c) => c + 1);
           setDateISO(dateISO);
           setPreference(preference);
@@ -442,7 +540,6 @@ export default function HomePage() {
             setActiveAlternativeId(null);
             setRouteColor(undefined);
             setLoadingPois(true);
-            console.log('[HomePage] routeReq set (Google Maps mode)');
           } else {
             // You.com Planner mode: fetch alternatives
             setLoadingAlternatives(true);
@@ -741,7 +838,6 @@ export default function HomePage() {
                 agentInFlightRef.current = false;
                 return;
               }
-              console.log(`[Photos] completed. fetched=${fetched}, cached=${cached}, total=${basePois.length}`);
               setPois(results);
               setLoadingPois(false);
             } else {
