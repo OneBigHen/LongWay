@@ -19,6 +19,7 @@ export default function MapView({
   avoidTolls,
   twistySources,
   sourcesVersion,
+  routeColor,
 }: {
   routeRequest: RouteRequest;
   pois?: POI[];
@@ -29,6 +30,7 @@ export default function MapView({
   avoidTolls?: boolean;
   twistySources?: TwistySource[];
   sourcesVersion?: number;
+  routeColor?: string; // Hex color for route polyline (e.g., '#4285F4' for blue, '#34A853' for green, '#9C27B0' for purple)
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -46,6 +48,7 @@ export default function MapView({
     waypoints: Array<{ lat: number; lng: number } | string>;
     avoidHighways: boolean;
     avoidTolls: boolean;
+    routeColor?: string;
   } | null>(null);
   const gpxActionsRef = useRef<{ previewGpxOnMap: (file: string) => Promise<void>; useGpxAsRoute: (file: string) => Promise<void> } | null>(null);
 
@@ -155,6 +158,7 @@ export default function MapView({
       waypoints: waypoints || [],
       avoidHighways: !!avoidHighways,
       avoidTolls: !!avoidTolls,
+      routeColor: routeColor,
     };
     
     // Check if this is actually a new/different route request
@@ -163,7 +167,8 @@ export default function MapView({
       lastRouteConfigRef.current.destination !== currentConfig.destination ||
       JSON.stringify(lastRouteConfigRef.current.waypoints) !== JSON.stringify(currentConfig.waypoints) ||
       lastRouteConfigRef.current.avoidHighways !== currentConfig.avoidHighways ||
-      lastRouteConfigRef.current.avoidTolls !== currentConfig.avoidTolls;
+      lastRouteConfigRef.current.avoidTolls !== currentConfig.avoidTolls ||
+      lastRouteConfigRef.current.routeColor !== currentConfig.routeColor;
     
     if (!configChanged) {
       console.log('[MapView] Skipping duplicate route request - config unchanged');
@@ -186,10 +191,21 @@ export default function MapView({
     }
 
     // Set preserveViewport: true to prevent auto-zooming (we'll handle it manually)
-    const renderer = new g.maps.DirectionsRenderer({ 
-      suppressMarkers: true, 
-      preserveViewport: true // Prevent automatic zoom - we'll do it manually once
-    });
+    const rendererOptions: google.maps.DirectionsRendererOptions = {
+      suppressMarkers: true,
+      preserveViewport: true, // Prevent automatic zoom - we'll do it manually once
+    };
+    
+    // Apply custom route color if provided
+    if (routeColor) {
+      rendererOptions.polylineOptions = {
+        strokeColor: routeColor,
+        strokeWeight: 5,
+        strokeOpacity: 0.8,
+      };
+    }
+    
+    const renderer = new g.maps.DirectionsRenderer(rendererOptions);
     renderer.setMap(mapInstanceRef.current);
     rendererRef.current = renderer;
 
@@ -198,7 +214,7 @@ export default function MapView({
         origin,
         destination,
         travelMode: g.maps.TravelMode.DRIVING,
-        optimizeWaypoints: true,
+        optimizeWaypoints: false, // Don't optimize - preserve order for alternative routes
         waypoints: (waypoints || []).map((w) =>
           typeof w === 'string'
             ? { location: w, stopover: true }
@@ -249,7 +265,7 @@ export default function MapView({
         }
       }
     );
-  }, [routeRequest, ready, waypoints, avoidHighways, avoidTolls]);
+  }, [routeRequest, ready, waypoints, avoidHighways, avoidTolls, routeColor]);
 
   // Render POI markers
   useEffect(() => {

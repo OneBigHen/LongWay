@@ -22,4 +22,8 @@ export const getYouAgentId = (): string => {
   return id;
 };
 
+export const getRouteAltAgentId = (): string => {
+  return 'b9907c16-a251-4e3c-b96f-e485f4149e0f';
+};
+
 
